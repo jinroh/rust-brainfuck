@@ -203,9 +203,7 @@ impl Brainfuck {
                     prompt!();
                 }
             }
-            OpCode::Breakpoint => {
-                self.mode = Mode::Debugging
-            },
+            OpCode::Breakpoint => self.mode = Mode::Debugging,
             OpCode::Jmp(offset) => {
                 if self.ram[self.data] == 0 {
                     self.pgrm = pgrm + offset + 1
@@ -250,7 +248,7 @@ impl Brainfuck {
             match command {
                 Ok(Command::PrintCode) => {
                     const NUM_COLS: usize = 64;
-                    const MAX_ROWS: usize =  8;
+                    const MAX_ROWS: usize = 8;
                     for r in 0..MAX_ROWS {
                         let skip = pgrm + r * NUM_COLS;
                         if self.code.len() <= skip {
@@ -262,7 +260,7 @@ impl Brainfuck {
                         }
                         println!();
                     }
-                },
+                }
                 Ok(Command::PrintMemory) => {
                     const NUM_ROWS: usize = 8;
                     const NUM_COLS: usize = 16;
@@ -280,12 +278,10 @@ impl Brainfuck {
                         println!();
                     }
                 }
-                Ok(Command::Next) => {
-                    return
-                }
+                Ok(Command::Next) => return,
                 Ok(Command::Exit) => {
                     self.mode = Mode::Running;
-                    return
+                    return;
                 }
                 Err(ref e) => println!("{}", e),
             }

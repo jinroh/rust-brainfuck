@@ -1,0 +1,10 @@
+[package]
+name = "rust-brainfuck"
+version = "0.1.0"
+authors = ["Pierre Guilleminot <pierre.guilleminot@gmail.com>"]
+
+[dependencies]
+
+[[bin]]
+name = "rust-brainfuck"
+path = "main.rs"

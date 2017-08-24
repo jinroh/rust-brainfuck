@@ -27,8 +27,7 @@ impl fmt::Debug for OpCode {
             OpCode::Print => write!(f, "."),
             OpCode::Load => write!(f, ","),
             OpCode::Breakpoint => write!(f, "!"),
-            OpCode::Jmp(_) => write!(f, "["),
-            OpCode::JmpClose(_) => write!(f, "]"),
+            OpCode::Loop(_) => write!(f, "["),
         }
     }
 }
@@ -55,12 +54,10 @@ impl FromStr for Command {
     }
 }
 
-pub struct Interpreter {
-    code: Box<[OpCode]>,
+pub struct Interpreter<'a> {
+    code: &'a Vec<OpCode>,
     ram: Box<[u8]>,
-
     data: usize,
-    pgrm: usize,
 
     mode: Mode,
 
@@ -68,8 +65,8 @@ pub struct Interpreter {
     _stdin_thread: JoinHandle<()>,
 }
 
-impl Interpreter {
-    pub fn new(code: Box<[OpCode]>) -> Interpreter {
+impl<'a> Interpreter<'a> {
+    pub fn new(code: &'a Vec<OpCode>) -> Interpreter<'a> {
         let (stdin_sx, stdin_rx) = sync_channel(0);
         let stdin_thread = thread::spawn(move || loop {
             stdin_sx.send(read_stdin()).unwrap();
@@ -79,7 +76,6 @@ impl Interpreter {
             code: code,
             ram: vec![0; RAM_LENGTH].into_boxed_slice(),
             data: 0,
-            pgrm: 0,
 
             mode: Mode::Running,
 
@@ -89,67 +85,56 @@ impl Interpreter {
     }
 
     pub fn run(&mut self) {
-        while let Some((pgrm, opcode)) = self.next() {
+        self.run_recur(self.code, 0)
+    }
+
+    pub fn run_recur(&mut self, code: &Vec<OpCode>, offset: usize) {
+        for (pc, opcode) in code.iter().enumerate() {
+            let pc_real = pc + offset;
             if self.mode == Mode::Debugging {
-                self.wait_console_commands(pgrm, opcode);
+                self.wait_console_commands(pc_real, opcode);
             }
-            self.run_instruction(pgrm, opcode)
-        }
-    }
-
-    fn run_instruction(&mut self, pgrm: usize, opcode: OpCode) {
-        match opcode {
-            OpCode::IncrPtr => self.data += 1,
-            OpCode::DecrPtr => self.data -= 1,
-            OpCode::Incr => self.ram[self.data] = self.ram[self.data].wrapping_add(1),
-            OpCode::Decr => self.ram[self.data] = self.ram[self.data].wrapping_sub(1),
-            OpCode::Print => {
-              print!("{}", self.ram[self.data] as char);
-              if self.mode == Mode::Debugging {
-                println!();
-              }
-            },
-            OpCode::Load => {
-                prompt!();
-                while let Ok(s) = self.stdin_rx.recv() {
-                    let result = s.as_bytes();
-                    if result.len() > 0 {
-                        self.ram[self.data] = result[0];
-                        break;
-                    }
+            match *opcode {
+                OpCode::IncrPtr => self.data += 1,
+                OpCode::DecrPtr => self.data -= 1,
+                OpCode::Incr => self.ram[self.data] = self.deref().wrapping_add(1),
+                OpCode::Decr => self.ram[self.data] = self.deref().wrapping_sub(1),
+                OpCode::Print => {
+                  print!("{}", self.deref() as char);
+                  if self.mode == Mode::Debugging {
+                    println!();
+                  }
+                }
+                OpCode::Load => {
                     prompt!();
+                    while let Ok(s) = self.stdin_rx.recv() {
+                        let result = s.as_bytes();
+                        if result.len() > 0 {
+                            self.ram[self.data] = result[0];
+                            break;
+                        }
+                        prompt!();
+                    }
                 }
-            }
-            OpCode::Breakpoint => self.mode = Mode::Debugging,
-            OpCode::Jmp(offset) => {
-                if self.ram[self.data] == 0 {
-                    self.pgrm = pgrm + offset + 1
-                }
-            }
-            OpCode::JmpClose(offset) => {
-                if self.ram[self.data] != 0 {
-                    self.pgrm = pgrm - offset + 1
+                OpCode::Breakpoint => self.mode = Mode::Debugging,
+                OpCode::Loop(ref code) => {
+                    while self.deref() != 0 {
+                        self.run_recur(&code, pc_real)
+                    }
                 }
             }
         }
     }
 
-    fn next(&mut self) -> Option<(usize, OpCode)> {
-        let pgrm = self.pgrm;
-        if pgrm < self.code.len() {
-            let opcode = self.code[pgrm];
-            self.pgrm += 1;
-            Some((pgrm, opcode))
-        } else {
-            None
-        }
+    fn deref(&self) -> u8 {
+        return self.ram[self.data]
     }
 
-    fn wait_console_commands(&mut self, pgrm: usize, opcode: OpCode) {
-        self.prompt_console(pgrm, opcode);
+    fn wait_console_commands(&mut self, pc: usize, opcode: &OpCode) {
+        self.prompt_console(pc, opcode);
         while let Ok(command_string) = self.stdin_rx.recv() {
             if command_string == "" {
-                self.prompt_console(pgrm, opcode);
+                self.prompt_console(pc, opcode);
                 continue;
             }
             let command = command_string.parse::<Command>();
@@ -158,7 +143,7 @@ impl Interpreter {
                     const NUM_COLS: usize = 64;
                     const MAX_ROWS: usize = 8;
                     for r in 0..MAX_ROWS {
-                        let skip = pgrm + r * NUM_COLS;
+                        let skip = pc + r * NUM_COLS;
                         if self.code.len() <= skip {
                             break;
                         }
@@ -205,13 +190,13 @@ impl Interpreter {
                 }
                 Err(ref e) => println!("{}", e),
             }
-            self.prompt_console(pgrm, opcode);
+            self.prompt_console(pc, opcode);
         }
     }
 
-    fn prompt_console(&self, pgrm: usize, opcode: OpCode) {
+    fn prompt_console(&self, pc: usize, opcode: &OpCode) {
         prompt!("(brainfuck 0x{:08x}:0x{:08x}:{:?}) ",
-                pgrm,
+                pc,
                 self.data,
                 opcode);
     }

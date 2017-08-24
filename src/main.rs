@@ -7,11 +7,12 @@ mod brfk;
 
 pub fn run_interpreter(filename: String) -> Result<(), io::Error> {
     let source_code = load_program_file(filename)?;
-    if let Some(code) = brfk::compile(source_code.as_slice()) {
-        let mut program = brfk::Interpreter::new(code);
-        program.run();
-    } else {
-        panic!("Could not compile");
+    match brfk::compile(source_code.as_slice()) {
+        Ok(code) => {
+            let mut program = brfk::Interpreter::new(&code);
+            program.run();
+        }
+        Err(err) => panic!("Could not compile: {:?}", err)
     }
     Ok(())
 }

@@ -7,4 +7,3 @@ authors = ["Pierre Guilleminot <pierre.guilleminot@gmail.com>"]
 
 [[bin]]
 name = "rust-brainfuck"
-path = "main.rs"

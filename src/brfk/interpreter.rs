@@ -1,43 +1,13 @@
-use std::env;
-use std::fs::File;
-use std::io;
-use std::io::{stdin, Read, Write};
+use std::io::{stdin, Write};
 
 use std::fmt;
 use std::str::{self, FromStr};
 use std::borrow::Cow;
 
 use std::thread::{self, JoinHandle};
-use std::sync::mpsc::{channel, Receiver};
+use std::sync::mpsc::{sync_channel, Receiver};
 
-macro_rules! prompt {
-  () => {{
-    print!("> ");
-    std::io::stdout().flush().unwrap();
-  }};
-  ($fmt:expr) => {{
-    print!(concat!($fmt, "> "));
-    std::io::stdout().flush().unwrap();
-  }};
-  ($fmt:expr, $($arg:tt)*) => {{
-    print!(concat!($fmt, "> "), $($arg)*);
-    std::io::stdout().flush().unwrap();
-  }};
-}
-
-fn main() {
-    let filename = env::args().nth(1).unwrap();
-    match exec_program(filename) {
-        Err(err) => println!("{:?}", err),
-        _ => {}
-    }
-}
-
-fn exec_program(filename: String) -> Result<(), io::Error> {
-    let mut program = Brainfuck::from_filename(filename)?;
-    program.run();
-    Ok(())
-}
+use super::opcodes::OpCode;
 
 const RAM_LENGTH: usize = 0xf000;
 
@@ -46,20 +16,6 @@ enum Mode {
     Running,
     Debugging,
 }
-
-#[derive(Clone, Copy)]
-enum OpCode {
-    IncrPtr,
-    DecrPtr,
-    Incr,
-    Decr,
-    Print,
-    Load,
-    Breakpoint,
-    Jmp(usize),
-    JmpClose(usize),
-}
-
 
 impl fmt::Debug for OpCode {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
@@ -99,7 +55,7 @@ impl FromStr for Command {
     }
 }
 
-struct Brainfuck {
+pub struct Interpreter {
     code: Box<[OpCode]>,
     ram: Box<[u8]>,
 
@@ -112,77 +68,33 @@ struct Brainfuck {
     _stdin_thread: JoinHandle<()>,
 }
 
-impl Brainfuck {
-    fn new(code: Box<[OpCode]>) -> Brainfuck {
-        let (stdin_sx, stdin_rx) = channel();
+impl Interpreter {
+    pub fn new(code: Box<[OpCode]>) -> Interpreter {
+        let (stdin_sx, stdin_rx) = sync_channel(0);
         let stdin_thread = thread::spawn(move || loop {
-                                             stdin_sx.send(read_stdin()).unwrap();
-                                         });
+            stdin_sx.send(read_stdin()).unwrap();
+         });
 
-        Brainfuck {
+        Interpreter {
             code: code,
             ram: vec![0; RAM_LENGTH].into_boxed_slice(),
             data: 0,
             pgrm: 0,
 
             mode: Mode::Running,
+
             stdin_rx: stdin_rx,
             _stdin_thread: stdin_thread,
         }
     }
 
-    fn from_filename(filename: String) -> Result<Brainfuck, io::Error> {
-        let source_code = load_program_file(filename)?;
-        if let Some(code) = Self::compile(source_code.as_slice()) {
-            Ok(Self::new(code))
-        } else {
-            panic!("Could not compile");
-        }
-    }
-
-    fn compile(code: &[u8]) -> Option<Box<[OpCode]>> {
-        let mut codes: Vec<OpCode> = Vec::with_capacity(code.len());
-
-        const N: usize = 512;
-        let mut jmp_index: [usize; N] = [0; N];
-        let mut jmp_count: usize = 0;
-
-        for &b in code.iter() {
-            match b as char {
-                '>' => codes.push(OpCode::IncrPtr),
-                '<' => codes.push(OpCode::DecrPtr),
-                '+' => codes.push(OpCode::Incr),
-                '-' => codes.push(OpCode::Decr),
-                '.' => codes.push(OpCode::Print),
-                ',' => codes.push(OpCode::Load),
-                '!' => codes.push(OpCode::Breakpoint),
-                '[' => {
-                    if jmp_count >= N {
-                        return None;
-                    }
-                    jmp_index[jmp_count] = codes.len();
-                    jmp_count += 1;
-                    codes.push(OpCode::Jmp(0)); // placeholder
-                }
-                ']' => {
-                    if jmp_count == 0 {
-                        return None;
-                    }
-                    let idx = jmp_index[jmp_count - 1];
-                    let off = codes.len() - idx;
-                    codes[idx] = OpCode::Jmp(off);
-                    codes.push(OpCode::JmpClose(off));
-                    jmp_count -= 1;
-                }
-                _ => {}
+    pub fn run(&mut self) {
+        while let Some((pgrm, opcode)) = self.next() {
+            if self.mode == Mode::Debugging {
+                self.wait_console_commands(pgrm, opcode);
             }
+            self.run_instruction(pgrm, opcode)
         }
-
-        if jmp_count != 0 {
-            return None;
-        }
-
-        Some(codes.into_boxed_slice())
     }
 
     fn run_instruction(&mut self, pgrm: usize, opcode: OpCode) {
@@ -191,7 +103,12 @@ impl Brainfuck {
             OpCode::DecrPtr => self.data -= 1,
             OpCode::Incr => self.ram[self.data] = self.ram[self.data].wrapping_add(1),
             OpCode::Decr => self.ram[self.data] = self.ram[self.data].wrapping_sub(1),
-            OpCode::Print => print!("{}", self.ram[self.data] as char),
+            OpCode::Print => {
+              print!("{}", self.ram[self.data] as char);
+              if self.mode == Mode::Debugging {
+                println!();
+              }
+            },
             OpCode::Load => {
                 prompt!();
                 while let Ok(s) = self.stdin_rx.recv() {
@@ -228,15 +145,6 @@ impl Brainfuck {
         }
     }
 
-    fn run(&mut self) {
-        while let Some((pgrm, opcode)) = self.next() {
-            if self.mode == Mode::Debugging {
-                self.wait_console_commands(pgrm, opcode);
-            }
-            self.run_instruction(pgrm, opcode)
-        }
-    }
-
     fn wait_console_commands(&mut self, pgrm: usize, opcode: OpCode) {
         self.prompt_console(pgrm, opcode);
         while let Ok(command_string) = self.stdin_rx.recv() {
@@ -264,15 +172,27 @@ impl Brainfuck {
                 Ok(Command::PrintMemory) => {
                     const NUM_ROWS: usize = 8;
                     const NUM_COLS: usize = 16;
-                    let mut data = self.data / NUM_COLS;
-                    for _ in 0..NUM_ROWS {
-                        print!("0x{:08x}  ", data);
+                    let data = self.data / NUM_COLS;
+                    for r in 0..NUM_ROWS {
+                        let mut data_local;
+                        data_local = data + r * NUM_ROWS;
+                        print!("0x{:08x}  ", data_local);
                         for x in 0..NUM_COLS {
-                            let byte = self.ram[data];
-                            data = data.wrapping_add(1);
+                            let byte = self.ram[data_local];
+                            data_local = data_local.wrapping_add(1);
                             print!("{:02x}", byte);
                             if x < NUM_COLS - 1 {
                                 print!(" ");
+                            }
+                        }
+                        print!("  ");
+                        data_local = data + r * NUM_ROWS;
+                        for _ in 0..NUM_COLS {
+                            let byte = self.ram[data_local];
+                            data_local = data_local.wrapping_add(1);
+                            match byte {
+                                0x20...0x7e => print!("{}", byte as char),
+                                _ => print!("."),
                             }
                         }
                         println!();
@@ -301,10 +221,4 @@ fn read_stdin() -> String {
     let mut input = String::new();
     stdin().read_line(&mut input).unwrap();
     input.trim().into()
-}
-
-fn load_program_file(filename: String) -> Result<Vec<u8>, io::Error> {
-    let mut buf = Vec::new();
-    File::open(filename)?.read_to_end(&mut buf)?;
-    Ok(buf)
 }

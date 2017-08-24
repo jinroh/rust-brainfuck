@@ -12,7 +12,7 @@ pub fn run_interpreter(filename: String) -> Result<(), io::Error> {
             let mut program = brfk::Interpreter::new(&code);
             program.run();
         }
-        Err(err) => panic!("Could not compile: {:?}", err)
+        Err(err) => panic!("Could not compile: {:?}", err),
     }
     Ok(())
 }

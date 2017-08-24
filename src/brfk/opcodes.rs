@@ -52,18 +52,18 @@ fn compile_recur(code: &mut Iter<u8>, indent: usize) -> Result<Vec<OpCode>, Comp
             '[' => opcodes.push(OpCode::While(compile_recur(code, indent + 1)?)),
             ']' => {
                 return if indent > 0 {
-                    Ok(opcodes)
-                } else {
-                    Err(CompileError::TooClosedWhile)
-                }
+                           Ok(opcodes)
+                       } else {
+                           Err(CompileError::TooClosedWhile)
+                       }
             }
             _ => {}
         }
     }
 
     return if indent > 0 {
-        Err(CompileError::UnclosedWhile)
-    } else {
-        Ok(opcodes)
-    }
+               Err(CompileError::UnclosedWhile)
+           } else {
+               Ok(opcodes)
+           };
 }

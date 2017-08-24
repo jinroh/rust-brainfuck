@@ -53,8 +53,8 @@ impl<'a> Interpreter<'a> {
     pub fn new(code: &'a [OpCode]) -> Interpreter<'a> {
         let (stdin_sx, stdin_rx) = sync_channel(0);
         let stdin_thread = thread::spawn(move || loop {
-            stdin_sx.send(read_stdin()).unwrap();
-         });
+                                             stdin_sx.send(read_stdin()).unwrap();
+                                         });
 
         Interpreter {
             code: code,
@@ -84,10 +84,10 @@ impl<'a> Interpreter<'a> {
                 OpCode::Incr => self.ram[self.data] = self.deref().wrapping_add(1),
                 OpCode::Decr => self.ram[self.data] = self.deref().wrapping_sub(1),
                 OpCode::Print => {
-                  print!("{}", self.deref() as char);
-                  if self.mode == Mode::Debugging {
-                    println!();
-                  }
+                    print!("{}", self.deref() as char);
+                    if self.mode == Mode::Debugging {
+                        println!();
+                    }
                 }
                 OpCode::Load => {
                     prompt!();
@@ -111,7 +111,7 @@ impl<'a> Interpreter<'a> {
     }
 
     fn deref(&self) -> u8 {
-        return self.ram[self.data]
+        return self.ram[self.data];
     }
 
     fn wait_console_commands(&mut self, pc: usize, opcode: &OpCode) {
@@ -179,10 +179,7 @@ impl<'a> Interpreter<'a> {
     }
 
     fn prompt_console(&self, pc: usize, opcode: &OpCode) {
-        prompt!("(brainfuck 0x{:08x}:0x{:08x}:{:?}) ",
-                pc,
-                self.data,
-                opcode);
+        prompt!("(brainfuck 0x{:08x}:0x{:08x}:{:?}) ", pc, self.data, opcode);
     }
 }
 

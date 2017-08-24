@@ -39,7 +39,7 @@ impl FromStr for Command {
 }
 
 pub struct Interpreter<'a> {
-    code: &'a Vec<OpCode>,
+    code: &'a [OpCode],
     ram: Box<[u8]>,
     data: usize,
 
@@ -50,7 +50,7 @@ pub struct Interpreter<'a> {
 }
 
 impl<'a> Interpreter<'a> {
-    pub fn new(code: &'a Vec<OpCode>) -> Interpreter<'a> {
+    pub fn new(code: &'a [OpCode]) -> Interpreter<'a> {
         let (stdin_sx, stdin_rx) = sync_channel(0);
         let stdin_thread = thread::spawn(move || loop {
             stdin_sx.send(read_stdin()).unwrap();
@@ -72,7 +72,7 @@ impl<'a> Interpreter<'a> {
         self.run_recur(self.code, 0)
     }
 
-    pub fn run_recur(&mut self, code: &Vec<OpCode>, offset: usize) {
+    pub fn run_recur(&mut self, code: &[OpCode], offset: usize) {
         for (pc, opcode) in code.iter().enumerate() {
             let pc_real = pc + offset;
             if self.mode == Mode::Debugging {
@@ -101,7 +101,7 @@ impl<'a> Interpreter<'a> {
                     }
                 }
                 OpCode::Breakpoint => self.mode = Mode::Debugging,
-                OpCode::Loop(ref code) => {
+                OpCode::While(ref code) => {
                     while self.deref() != 0 {
                         self.run_recur(&code, pc_real)
                     }

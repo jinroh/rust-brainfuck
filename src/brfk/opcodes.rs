@@ -9,7 +9,7 @@ pub enum OpCode {
     Print,
     Load,
     Breakpoint,
-    Loop(Vec<OpCode>),
+    While(Vec<OpCode>),
 }
 
 impl fmt::Debug for OpCode {
@@ -22,15 +22,15 @@ impl fmt::Debug for OpCode {
             OpCode::Print => write!(f, "."),
             OpCode::Load => write!(f, ","),
             OpCode::Breakpoint => write!(f, "!"),
-            OpCode::Loop(_) => write!(f, "["),
+            OpCode::While(_) => write!(f, "["),
         }
     }
 }
 
 #[derive(Debug)]
 pub enum CompileError {
-    UnclosedLoop,
-    TooClosedLoop,
+    UnclosedWhile,
+    TooClosedWhile,
 }
 
 pub fn compile(code: &[u8]) -> Result<Vec<OpCode>, CompileError> {
@@ -49,12 +49,12 @@ fn compile_recur(code: &mut Iter<u8>, indent: usize) -> Result<Vec<OpCode>, Comp
             '.' => opcodes.push(OpCode::Print),
             ',' => opcodes.push(OpCode::Load),
             '!' => opcodes.push(OpCode::Breakpoint),
-            '[' => opcodes.push(OpCode::Loop(compile_recur(code, indent + 1)?)),
+            '[' => opcodes.push(OpCode::While(compile_recur(code, indent + 1)?)),
             ']' => {
                 return if indent > 0 {
                     Ok(opcodes)
                 } else {
-                    Err(CompileError::TooClosedLoop)
+                    Err(CompileError::TooClosedWhile)
                 }
             }
             _ => {}
@@ -62,7 +62,7 @@ fn compile_recur(code: &mut Iter<u8>, indent: usize) -> Result<Vec<OpCode>, Comp
     }
 
     return if indent > 0 {
-        Err(CompileError::UnclosedLoop)
+        Err(CompileError::UnclosedWhile)
     } else {
         Ok(opcodes)
     }

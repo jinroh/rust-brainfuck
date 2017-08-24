@@ -1,4 +1,5 @@
 use std::slice::Iter;
+use std::fmt;
 
 pub enum OpCode {
     IncrPtr,
@@ -9,6 +10,21 @@ pub enum OpCode {
     Load,
     Breakpoint,
     Loop(Vec<OpCode>),
+}
+
+impl fmt::Debug for OpCode {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        match *self {
+            OpCode::IncrPtr => write!(f, ">"),
+            OpCode::DecrPtr => write!(f, "<"),
+            OpCode::Incr => write!(f, "+"),
+            OpCode::Decr => write!(f, "-"),
+            OpCode::Print => write!(f, "."),
+            OpCode::Load => write!(f, ","),
+            OpCode::Breakpoint => write!(f, "!"),
+            OpCode::Loop(_) => write!(f, "["),
+        }
+    }
 }
 
 #[derive(Debug)]

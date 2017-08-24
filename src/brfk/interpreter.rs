@@ -1,6 +1,5 @@
 use std::io::{stdin, Write};
 
-use std::fmt;
 use std::str::{self, FromStr};
 use std::borrow::Cow;
 
@@ -15,21 +14,6 @@ const RAM_LENGTH: usize = 0xf000;
 enum Mode {
     Running,
     Debugging,
-}
-
-impl fmt::Debug for OpCode {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        match *self {
-            OpCode::IncrPtr => write!(f, ">"),
-            OpCode::DecrPtr => write!(f, "<"),
-            OpCode::Incr => write!(f, "+"),
-            OpCode::Decr => write!(f, "-"),
-            OpCode::Print => write!(f, "."),
-            OpCode::Load => write!(f, ","),
-            OpCode::Breakpoint => write!(f, "!"),
-            OpCode::Loop(_) => write!(f, "["),
-        }
-    }
 }
 
 #[derive(Debug)]

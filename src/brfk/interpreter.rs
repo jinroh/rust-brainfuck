@@ -1,10 +1,7 @@
-use std::io::{stdin, Write};
+use std::io::{self, BufRead, Write};
 
 use std::str::{self, FromStr};
 use std::borrow::Cow;
-
-use std::thread::{self, JoinHandle};
-use std::sync::mpsc::{sync_channel, Receiver};
 
 use super::opcodes::OpCode;
 
@@ -43,36 +40,31 @@ pub struct Interpreter<'a> {
     ram: Box<[u8]>,
     data: usize,
 
-    mode: Mode,
+    input: Box<BufRead>,
+    output: Box<Write>,
 
-    stdin_rx: Receiver<String>,
-    _stdin_thread: JoinHandle<()>,
+    mode: Mode,
 }
 
 impl<'a> Interpreter<'a> {
-    pub fn new(code: &'a [OpCode]) -> Interpreter<'a> {
-        let (stdin_sx, stdin_rx) = sync_channel(0);
-        let stdin_thread = thread::spawn(move || loop {
-                                             stdin_sx.send(read_stdin()).unwrap();
-                                         });
-
+    pub fn new(input: Box<BufRead>, output: Box<Write>, code: &'a [OpCode]) -> Interpreter<'a> {
         Interpreter {
             code: code,
             ram: vec![0; RAM_LENGTH].into_boxed_slice(),
             data: 0,
 
-            mode: Mode::Running,
+            input: input,
+            output: output,
 
-            stdin_rx: stdin_rx,
-            _stdin_thread: stdin_thread,
+            mode: Mode::Running,
         }
     }
 
-    pub fn run(&mut self) {
+    pub fn run(&mut self) -> Result<(), io::Error> {
         self.run_recur(self.code, 0)
     }
 
-    pub fn run_recur(&mut self, code: &[OpCode], offset: usize) {
+    pub fn run_recur(&mut self, code: &[OpCode], offset: usize) -> Result<(), io::Error> {
         for (pc, opcode) in code.iter().enumerate() {
             let pc_real = pc + offset;
             if self.mode == Mode::Debugging {
@@ -84,40 +76,41 @@ impl<'a> Interpreter<'a> {
                 OpCode::Incr => self.ram[self.data] = self.deref().wrapping_add(1),
                 OpCode::Decr => self.ram[self.data] = self.deref().wrapping_sub(1),
                 OpCode::Print => {
-                    print!("{}", self.deref() as char);
+                    self.output.write_all(&self.ram[self.data..self.data + 1])?;
                     if self.mode == Mode::Debugging {
                         println!();
                     }
                 }
                 OpCode::Load => {
-                    prompt!();
-                    while let Ok(s) = self.stdin_rx.recv() {
-                        let result = s.as_bytes();
-                        if result.len() > 0 {
-                            self.ram[self.data] = result[0];
-                            break;
-                        }
-                        prompt!();
-                    }
+                    self.input
+                        .read_exact(&mut self.ram[self.data..self.data + 1])?
                 }
                 OpCode::Breakpoint => self.mode = Mode::Debugging,
                 OpCode::While(ref code) => {
                     while self.deref() != 0 {
-                        self.run_recur(&code, pc_real)
+                        self.run_recur(&code, pc_real)?
                     }
                 }
             }
         }
+        Ok(())
     }
 
     fn deref(&self) -> u8 {
-        return self.ram[self.data];
+        self.ram[self.data]
     }
 
     fn wait_console_commands(&mut self, pc: usize, opcode: &OpCode) {
         self.prompt_console(pc, opcode);
-        while let Ok(command_string) = self.stdin_rx.recv() {
-            if command_string == "" {
+        self.output.flush().unwrap();
+        let mut command_string = String::new();
+        while {
+                  command_string.clear();
+                  self.input.read_line(&mut command_string).is_ok()
+              } {
+            command_string.pop();
+            command_string.trim();
+            if command_string.len() == 0 {
                 self.prompt_console(pc, opcode);
                 continue;
             }
@@ -179,12 +172,7 @@ impl<'a> Interpreter<'a> {
     }
 
     fn prompt_console(&self, pc: usize, opcode: &OpCode) {
-        prompt!("(brainfuck 0x{:08x}:0x{:08x}:{:?}) ", pc, self.data, opcode);
+        print!("(brainfuck 0x{:08x}:0x{:08x}:{:?}) ", pc, self.data, opcode);
+        ::std::io::stdout().flush().unwrap();
     }
-}
-
-fn read_stdin() -> String {
-    let mut input = String::new();
-    stdin().read_line(&mut input).unwrap();
-    input.trim().into()
 }
